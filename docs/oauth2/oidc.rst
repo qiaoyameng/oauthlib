@@ -19,3 +19,4 @@ A new userinfo endpoint can also be implemented to fulfill the core of OIDC.
    oidc/endpoints
    oidc/grants
    oidc/id_tokens
+   oidc/claims
