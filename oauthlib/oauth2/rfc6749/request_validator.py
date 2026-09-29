@@ -277,6 +277,63 @@ class RequestValidator:
         """
         return True
 
+    def consume_refresh_token(self, refresh_token, new_refresh_token, client,
+                              request, *args, **kwargs):
+        """Atomically consume a rotated refresh token and register its successor.
+
+        This method is the entry point of the optional *refresh token family*
+        protocol (rotation with replay detection). The default implementation
+        returns ``None``, which disables the protocol and preserves the
+        historic behavior of the Refresh Token Grant; validators written
+        before this protocol existed therefore keep working unchanged.
+
+        When the protocol is enabled, this method is called after a new
+        refresh token has been generated but *before* anything is persisted
+        or returned to the client. The implementation MUST perform the
+        following steps as one atomic operation (e.g. inside a single lock,
+        or a single database transaction with appropriate constraints --
+        a "check then write" sequence without mutual exclusion is NOT
+        atomic and will lose races between concurrent refresh requests):
+
+            1. confirm ``refresh_token`` exists and is still unspent,
+            2. mark ``refresh_token`` consumed, and
+            3. register ``new_refresh_token`` as its successor within the
+               same token family.
+
+        Return values:
+
+            - ``True``: the old token was valid and has been consumed, the
+              successor has been registered. The grant will persist and
+              return the new token.
+            - ``False``: the presented token was unknown or had already been
+              consumed (replay). On replay the implementation MUST revoke the
+              *entire token family* the token belongs to (and only that
+              family -- other login sessions of the same user MUST NOT be
+              affected). The grant will reject the request with
+              ``invalid_grant`` and will not issue a token.
+            - ``None``: protocol disabled (default); the grant falls back to
+              the legacy flow.
+
+        Any exception raised here is treated as a storage failure: the grant
+        aborts with a ``server_error`` response and the new token is
+        discarded, so a client can never receive a new refresh token that
+        was not registered by the storage layer.
+
+        A thread-safe in-memory reference implementation is available as
+        :class:`oauthlib.oauth2.rfc6749.token_family.InMemoryTokenFamilyValidator`.
+
+        :param refresh_token: The refresh token presented by the client.
+        :param new_refresh_token: The freshly generated successor token.
+        :param client: The authenticated client (``request.client``).
+        :param request: OAuthlib request.
+        :type request: oauthlib.common.Request
+        :rtype: True, False or None (disabled)
+
+        Method is used by:
+            - Refresh Token Grant
+        """
+        return None
+
     def save_authorization_code(self, client_id, code, request, *args, **kwargs):
         """Persist the authorization_code.
 

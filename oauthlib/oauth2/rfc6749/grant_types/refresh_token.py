@@ -65,6 +65,40 @@ class RefreshTokenGrant(GrantTypeBase):
         for modifier in self._token_modifiers:
             token = modifier(token, token_handler, request)
 
+        new_refresh_token = token.get('refresh_token')
+        if (new_refresh_token is not None
+                and new_refresh_token != request.refresh_token):
+            # A new refresh token is being issued. Give the validator the
+            # opportunity to atomically consume the old token and register
+            # its successor (optional token family protocol). Validators
+            # that do not implement the protocol return None and the legacy
+            # flow is preserved.
+            try:
+                consumed = self.request_validator.consume_refresh_token(
+                    request.refresh_token, new_refresh_token,
+                    request.client, request)
+            except errors.OAuth2Error as e:
+                log.debug('Token family consumption rejected, %s.', e)
+                headers.update(e.headers)
+                return headers, e.json, e.status_code
+            except Exception:
+                # Storage failure: never hand out an unregistered token.
+                log.exception('Failed to consume refresh token %s.',
+                              request.refresh_token)
+                e = errors.ServerError(request=request, status_code=500)
+                headers.update(e.headers)
+                return headers, e.json, e.status_code
+            if consumed is False:
+                # The old token was already spent (replay). The validator
+                # has revoked the whole token family; refuse to issue.
+                log.debug('Refresh token %s was already consumed, token '
+                          'family revoked.', request.refresh_token)
+                e = errors.InvalidGrantError(
+                    description='Refresh token was already used.',
+                    request=request)
+                headers.update(e.headers)
+                return headers, e.json, e.status_code
+
         self.request_validator.save_token(token, request)
 
         log.debug('Issuing new token to client id %r (%r), %r.',
