@@ -6,7 +6,7 @@ import logging
 from itertools import chain
 
 from oauthlib.common import add_params_to_uri
-from oauthlib.oauth2.rfc6749 import errors, utils
+from oauthlib.oauth2.rfc6749 import errors, jarm, utils
 from oauthlib.uri_validate import is_absolute_uri
 
 from ..request_validator import RequestValidator
@@ -78,6 +78,14 @@ class GrantTypeBase:
     default_response_mode = 'fragment'
     refresh_token = True
     response_types = ['code']
+
+    # JWT Secured Authorization Response Mode (JARM) configuration.
+    # Set jwt_response_signing_key to enable the 'jwt', 'query.jwt' and
+    # 'form_post.jwt' response modes.
+    jwt_response_signing_key = None
+    jwt_response_algorithm = 'HS256'
+    jwt_response_issuer = None
+    jwt_response_lifetime = 600
 
     def __init__(self, request_validator=None, **kwargs):
         self.request_validator = request_validator or RequestValidator()
@@ -241,7 +249,8 @@ class GrantTypeBase:
         """
         request.response_mode = request.response_mode or self.default_response_mode
 
-        if request.response_mode not in ('query', 'fragment'):
+        if (not jarm.is_jarm_response_mode(request.response_mode)
+                and request.response_mode not in ('query', 'fragment')):
             log.debug('Overriding invalid response mode %s with %s',
                       request.response_mode, self.default_response_mode)
             request.response_mode = self.default_response_mode
@@ -251,6 +260,10 @@ class GrantTypeBase:
         if request.response_type == 'none':
             state = token.get('state', None)
             token_items = [('state', state)] if state else []
+
+        if jarm.is_jarm_response_mode(request.response_mode):
+            return self._prepare_jarm_response(
+                request, list(token_items), headers, body, status)
 
         if request.response_mode == 'query':
             headers['Location'] = add_params_to_uri(
@@ -264,6 +277,80 @@ class GrantTypeBase:
 
         raise NotImplementedError(
             'Subclasses must set a valid default_response_mode')
+
+    def _effective_response_mode(self, request):
+        """Return the response mode in effect for the request."""
+        return getattr(request, 'response_mode', None) or self.default_response_mode
+
+    def prepare_error_response(self, request, error, headers=None):
+        """Route an OAuth2 error back to the client per the response mode.
+
+        When a JWT response mode is in effect the error parameters are
+        wrapped in a signed JWT exactly like success parameters are. Fatal
+        errors (invalid client_id or redirect_uri) must be raised by the
+        caller before reaching this method, since the user-agent MUST NOT
+        be redirected to an unvalidated redirection URI.
+
+        :param request: OAuthlib request.
+        :type request: oauthlib.common.Request
+        :param error: The OAuth2Error to convey to the client.
+        :param headers: Optional dict of response headers to extend.
+        """
+        headers = headers if headers is not None else {}
+        request.redirect_uri = request.redirect_uri or self.error_uri
+        response_mode = self._effective_response_mode(request)
+
+        if jarm.is_jarm_response_mode(response_mode):
+            return self._prepare_jarm_response(
+                request, error.twotuples, headers, None, 302)
+
+        headers['Location'] = add_params_to_uri(
+            request.redirect_uri, error.twotuples,
+            fragment=response_mode == 'fragment')
+        return headers, None, 302
+
+    def _prepare_jarm_response(self, request, params, headers, body, status):
+        """Wrap authorization response parameters in a signed JWT (JARM).
+
+        The JWT audience is bound to the client_id of the current request.
+        A signing failure raises ServerError and never falls back to a
+        plaintext response.
+
+        :param request: OAuthlib request.
+        :type request: oauthlib.common.Request
+        :param params: Iterable of two-tuples with the response parameters.
+        :param headers:
+        :param body:
+        :param status:
+        """
+        headers = headers if headers is not None else {}
+        response_mode = self._effective_response_mode(request)
+
+        if not self.jwt_response_signing_key:
+            log.error('JWT response mode %s requested but no '
+                      'jwt_response_signing_key is configured.', response_mode)
+            raise errors.ServerError(
+                description='JWT response mode requested but no signing '
+                            'key is configured.', request=request)
+
+        token = jarm.generate_jarm_response(
+            params,
+            key=self.jwt_response_signing_key,
+            algorithm=self.jwt_response_algorithm,
+            issuer=self.jwt_response_issuer,
+            audience=request.client_id,
+            expires_in=self.jwt_response_lifetime)
+
+        if response_mode == 'form_post.jwt':
+            headers['Content-Type'] = 'text/html;charset=UTF-8'
+            headers['Cache-Control'] = 'no-cache, no-store'
+            body = jarm.create_form_post_html(
+                request.redirect_uri, [('response', token)])
+            return headers, body, 200
+
+        headers['Location'] = add_params_to_uri(
+            request.redirect_uri, [('response', token)], fragment=False)
+        return headers, body, status
 
     def _get_default_headers(self):
         """Create default headers for grant responses."""

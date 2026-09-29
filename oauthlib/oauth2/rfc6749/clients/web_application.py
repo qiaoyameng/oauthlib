@@ -8,6 +8,8 @@ for consuming and providing OAuth 2.0 RFC6749.
 """
 import warnings
 
+from ..errors import raise_from_error
+from ..jarm import extract_jarm_response, validate_jarm_response
 from ..parameters import (
     parse_authorization_code_response, prepare_grant_uri,
     prepare_token_request,
@@ -220,3 +222,39 @@ class WebApplicationClient(Client):
         response = parse_authorization_code_response(uri, state=state)
         self.populate_code_attributes(response)
         return response
+
+    def parse_jarm_response(self, uri=None, body=None, key=None,
+                            algorithms=None, issuer=None, state=None):
+        """Parse and validate a JWT secured authorization response (JARM).
+
+        The authorization server delivers the authorization response
+        parameters wrapped in a signed JWT, conveyed in the ``response``
+        parameter of the redirection URI query (``query.jwt`` response
+        mode) or of the urlencoded form_post response body
+        (``form_post.jwt`` response mode).
+
+        The JWT signature and expiration are always verified. The audience
+        (``aud``) is verified against this client's client_id and the
+        issuer (``iss``) is verified when ``issuer`` is provided.
+
+        :param uri: The callback URI that resulted from the user being
+                    redirected back from the provider, if any.
+        :param body: The urlencoded form_post response body, if any.
+        :param key: The key used to verify the JWT signature.
+        :param algorithms: List of allowed JWS signing algorithms.
+        :param issuer: Expected value of the ``iss`` claim, if any.
+        :param state: The state provided in the authorization request.
+        :returns: The authorization response parameters as a dict.
+        :raises: jwt.InvalidTokenError (and subclasses) if the JWT is
+                 invalid, expired or issued for another audience.
+        :raises: MismatchingStateError if the state does not match.
+        :raises: OAuth2Error subclasses if the response carries an error.
+        """
+        response = extract_jarm_response(uri=uri, body=body)
+        claims = validate_jarm_response(
+            response, key, algorithms=algorithms, issuer=issuer,
+            audience=self.client_id, state=state)
+        if 'error' in claims:
+            raise_from_error(claims['error'], claims)
+        self.populate_code_attributes(claims)
+        return claims

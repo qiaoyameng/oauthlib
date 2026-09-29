@@ -265,11 +265,7 @@ class AuthorizationCodeGrant(GrantTypeBase):
         # https://tools.ietf.org/html/rfc6749#appendix-B
         except errors.OAuth2Error as e:
             log.debug('Client error during validation of %r. %r.', request, e)
-            request.redirect_uri = request.redirect_uri or self.error_uri
-            redirect_uri = common.add_params_to_uri(
-                request.redirect_uri, e.twotuples,
-                fragment=request.response_mode == "fragment")
-            return {'Location': redirect_uri}, None, 302
+            return self.prepare_error_response(request, e)
 
         grant = self.create_authorization_code(request)
         for modifier in self._code_modifiers:

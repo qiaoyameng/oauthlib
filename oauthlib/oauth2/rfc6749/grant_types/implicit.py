@@ -4,8 +4,6 @@ oauthlib.oauth2.rfc6749.grant_types
 """
 import logging
 
-from oauthlib import common
-
 from .. import errors
 from .base import GrantTypeBase
 
@@ -227,8 +225,7 @@ class ImplicitGrant(GrantTypeBase):
         # https://tools.ietf.org/html/rfc6749#appendix-B
         except errors.OAuth2Error as e:
             log.debug('Client error during validation of %r. %r.', request, e)
-            return {'Location': common.add_params_to_uri(request.redirect_uri, e.twotuples,
-                                                         fragment=True)}, None, 302
+            return self.prepare_error_response(request, e)
 
         # In OIDC implicit flow it is possible to have a request_type that does not include the access_token!
         # "id_token token" - return the access token and the id token
