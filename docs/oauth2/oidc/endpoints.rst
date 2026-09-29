@@ -8,6 +8,7 @@ existing OAuth2.0 endpoints are common to both protocols.
    :maxdepth: 2
 
    userinfo
+   backchannel_logout
 
 See also the related endpoints from OAuth2.0:
 
