@@ -4,6 +4,7 @@ Changelog
 3.4.0 (unreleased):
 ------------------
 OAuth2.0 Provider:
+* Added an optional refresh token family protocol with reuse detection: ``RefreshTokenGrant`` now accepts a ``refresh_token_store`` implementing ``RefreshTokenFamilyStore``, which atomically consumes the old refresh token and registers its successor; reuse of a consumed token revokes only that token family. Ships with a thread-safe ``InMemoryRefreshTokenStore`` reference implementation.
 * **Breaking**: Removed JSONP support from token revocation endpoint. JSONP has been superseded by CORS for cross-origin requests. The ``enable_jsonp`` parameter has been removed from ``RevocationEndpoint`` and the ``callback`` parameter has been removed from ``prepare_token_revocation_request``.
 * Improved PKCE Nonce comparison
 

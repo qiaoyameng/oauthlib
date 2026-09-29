@@ -20,7 +20,12 @@ class RefreshTokenGrant(GrantTypeBase):
 
     def __init__(self, request_validator=None,
                  issue_new_refresh_tokens=True,
+                 refresh_token_store=None,
                  **kwargs):
+        if refresh_token_store is not None and not issue_new_refresh_tokens:
+            raise ValueError('A refresh token family store requires issuing '
+                             'new refresh tokens on refresh.')
+        self.refresh_token_store = refresh_token_store
         super().__init__(
             request_validator,
             issue_new_refresh_tokens=issue_new_refresh_tokens,
@@ -65,12 +70,42 @@ class RefreshTokenGrant(GrantTypeBase):
         for modifier in self._token_modifiers:
             token = modifier(token, token_handler, request)
 
-        self.request_validator.save_token(token, request)
+        if self.refresh_token_store is None:
+            self.request_validator.save_token(token, request)
+        else:
+            error = self._rotate_token_family(token, request)
+            if error is not None:
+                headers.update(error.headers)
+                return headers, error.json, error.status_code
 
         log.debug('Issuing new token to client id %r (%r), %r.',
                   request.client_id, request.client, token)
         headers.update(self._create_cors_headers(request))
         return headers, json.dumps(token), 200
+
+    def _rotate_token_family(self, token, request):
+        """Atomically rotate the refresh token within its family.
+
+        Returns None on success, or an OAuth2Error to be sent to the
+        client. The new token is only ever returned to the client after it
+        has been registered as the family's live token; on any storage
+        failure an error is returned instead of an unregistered token.
+        """
+        try:
+            registered = self.refresh_token_store.consume_and_register(
+                request.refresh_token, token, request)
+        except errors.OAuth2Error as e:
+            log.debug('Token family store refused rotation, %s.', e)
+            return e
+        except Exception:
+            log.exception('Token family store failed to register rotation.')
+            return errors.TemporarilyUnavailableError(
+                status_code=503, request=request)
+        if not registered:
+            log.debug('Refresh token %s already consumed or unknown, '
+                      'family revoked.', request.refresh_token)
+            return errors.InvalidGrantError(request=request)
+        return None
 
     def validate_token_request(self, request):
         """

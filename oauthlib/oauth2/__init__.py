@@ -63,6 +63,10 @@ from .rfc6749.grant_types import (
     ResourceOwnerPasswordCredentialsGrant,
 )
 from .rfc6749.request_validator import RequestValidator
+from .rfc6749.token_family import (
+    InMemoryRefreshTokenStore,
+    RefreshTokenFamilyStore,
+)
 from .rfc6749.tokens import BearerToken, OAuth2Token
 from .rfc6749.utils import is_secure_transport
 from .rfc8628.clients import DeviceClient
