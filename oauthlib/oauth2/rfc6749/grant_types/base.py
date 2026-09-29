@@ -3,16 +3,33 @@ oauthlib.oauth2.rfc6749.grant_types
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 """
 import logging
+from html import escape
 from itertools import chain
 
 from oauthlib.common import add_params_to_uri
 from oauthlib.oauth2.rfc6749 import errors, utils
 from oauthlib.uri_validate import is_absolute_uri
 
+from ..jwt_response import JWT_RESPONSE_MODES
 from ..request_validator import RequestValidator
 from ..utils import is_secure_transport
 
 log = logging.getLogger(__name__)
+
+
+def _form_post_html(redirect_uri, params):
+    """Build an auto-submitting HTML form per the OAuth 2.0
+    Form Post Response Mode."""
+    inputs = ''.join(
+        '<input type="hidden" name="%s" value="%s"/>' % (escape(k, quote=True), escape(v, quote=True))
+        for k, v in params)
+    return (
+        '<!DOCTYPE html><html><head><title>Authorization Response</title>'
+        '</head><body onload="document.forms[0].submit()">'
+        '<form method="post" action="%s">%s'
+        '<noscript><button type="submit">Continue</button></noscript>'
+        '</form></body></html>'
+    ) % (escape(redirect_uri, quote=True), inputs)
 
 
 class ValidatorsContainer:
@@ -78,6 +95,7 @@ class GrantTypeBase:
     default_response_mode = 'fragment'
     refresh_token = True
     response_types = ['code']
+    jwt_response_config = None
 
     def __init__(self, request_validator=None, **kwargs):
         self.request_validator = request_validator or RequestValidator()
@@ -241,7 +259,8 @@ class GrantTypeBase:
         """
         request.response_mode = request.response_mode or self.default_response_mode
 
-        if request.response_mode not in ('query', 'fragment'):
+        if request.response_mode not in ('query', 'fragment') and \
+                not self._jwt_response_mode_enabled(request):
             log.debug('Overriding invalid response mode %s with %s',
                       request.response_mode, self.default_response_mode)
             request.response_mode = self.default_response_mode
@@ -252,6 +271,10 @@ class GrantTypeBase:
             state = token.get('state', None)
             token_items = [('state', state)] if state else []
 
+        if self._jwt_response_mode_enabled(request):
+            return self._prepare_jwt_authorization_response(
+                request, list(token_items), headers, body, status)
+
         if request.response_mode == 'query':
             headers['Location'] = add_params_to_uri(
                 request.redirect_uri, token_items, fragment=False)
@@ -261,6 +284,48 @@ class GrantTypeBase:
             headers['Location'] = add_params_to_uri(
                 request.redirect_uri, token_items, fragment=True)
             return headers, body, status
+
+        raise NotImplementedError(
+            'Subclasses must set a valid default_response_mode')
+
+    def _jwt_response_mode_enabled(self, request):
+        """Check if the request asked for a signed (JWT) response and the
+        grant is configured to produce one."""
+        return request.response_mode in JWT_RESPONSE_MODES and \
+            self.jwt_response_config is not None
+
+    def _prepare_jwt_authorization_response(self, request, token_items,
+                                            headers, body, status):
+        """Wrap the authorization response parameters into a signed JWT and
+        place it according to the requested JWT response mode.
+
+        Both success and error parameters are wrapped with the same rules.
+        A failure to sign MUST NOT fall back to a plaintext response, so a
+        ServerError is raised instead.
+        """
+        try:
+            response_jwt = self.jwt_response_config.create_response(
+                request.client_id, dict(token_items))
+        except Exception as e:
+            log.error('Failed to sign authorization response for %r: %r',
+                      request, e)
+            raise errors.ServerError(
+                description='Unable to sign the authorization response.',
+                request=request) from e
+
+        if request.response_mode in ('jwt', 'query.jwt'):
+            headers['Location'] = add_params_to_uri(
+                request.redirect_uri, [('response', response_jwt)],
+                fragment=False)
+            return headers, body, status
+
+        if request.response_mode == 'form_post.jwt':
+            headers['Content-Type'] = 'text/html;charset=UTF-8'
+            headers['Cache-Control'] = 'no-store'
+            headers['Pragma'] = 'no-cache'
+            body = _form_post_html(
+                request.redirect_uri, [('response', response_jwt)])
+            return headers, body, 200
 
         raise NotImplementedError(
             'Subclasses must set a valid default_response_mode')

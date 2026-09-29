@@ -16,6 +16,7 @@ from oauthlib.oauth2.rfc6749 import tokens
 from oauthlib.oauth2.rfc6749.errors import (
     InsecureTransportError, TokenExpiredError,
 )
+from oauthlib.oauth2.rfc6749.jwt_response import validate_signed_response
 from oauthlib.oauth2.rfc6749.parameters import (
     parse_expires,
     parse_token_response, prepare_token_request,
@@ -163,6 +164,31 @@ class Client:
     def parse_request_uri_response(self, *args, **kwargs):
         """Abstract method used to parse redirection responses."""
         raise NotImplementedError("Must be implemented by inheriting classes.")
+
+    def parse_signed_authorization_response(self, response, key,
+                                            algorithms=None, issuer=None,
+                                            state=None):
+        """Validate a signed (JWT) authorization response.
+
+        Verifies the signature, expiration, issuer and that the ``aud`` claim
+        matches this client's ``client_id``, then checks the ``state``
+        parameter. Any OAuth2 error carried by the response is raised.
+
+        :param response: The response JWT received in the ``response``
+                         parameter of the callback.
+        :param key: Key used to verify the signature.
+        :param algorithms: Allowed signature algorithms. Defaults to
+                           ``['HS256']``.
+        :param issuer: Expected issuer of the response, if any.
+        :param state: Expected state, defaults to the client's current state.
+        :returns: The authorization response parameters as a dict.
+        """
+        state = state or self.state
+        params = validate_signed_response(
+            response, key, algorithms=algorithms, issuer=issuer,
+            audience=self.client_id, state=state)
+        self.populate_code_attributes(params)
+        return params
 
     def add_token(self, uri, http_method='GET', body=None, headers=None,
                   token_placement=None, **kwargs):

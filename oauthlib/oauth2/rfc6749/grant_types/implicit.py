@@ -227,6 +227,10 @@ class ImplicitGrant(GrantTypeBase):
         # https://tools.ietf.org/html/rfc6749#appendix-B
         except errors.OAuth2Error as e:
             log.debug('Client error during validation of %r. %r.', request, e)
+            request.response_mode = request.response_mode or self.default_response_mode
+            if self._jwt_response_mode_enabled(request):
+                return self._prepare_jwt_authorization_response(
+                    request, e.twotuples, {}, None, 302)
             return {'Location': common.add_params_to_uri(request.redirect_uri, e.twotuples,
                                                          fragment=True)}, None, 302
 

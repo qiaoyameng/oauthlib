@@ -6,6 +6,10 @@ Changelog
 OAuth2.0 Provider:
 * **Breaking**: Removed JSONP support from token revocation endpoint. JSONP has been superseded by CORS for cross-origin requests. The ``enable_jsonp`` parameter has been removed from ``RevocationEndpoint`` and the ``callback`` parameter has been removed from ``prepare_token_revocation_request``.
 * Improved PKCE Nonce comparison
+* Added optional signed (JWT) authorization responses (JARM-like). Configure ``JWTResponseConfig`` (signing key, algorithm, issuer, lifetime) on a grant to enable the ``jwt``, ``query.jwt`` and ``form_post.jwt`` response modes. Success and error parameters are wrapped in the same signed JWT, with ``aud`` bound to the client.
+
+OAuth2.0 Client:
+* Added ``Client.parse_signed_authorization_response`` and ``oauthlib.oauth2.validate_signed_response`` to verify signed (JWT) authorization responses (signature, expiration, issuer, audience and state).
 
 Misc:
 * #930: Add devcontainer, Add Python3.14, Python3.14t, Remove Python3.8.

@@ -266,6 +266,13 @@ class AuthorizationCodeGrant(GrantTypeBase):
         except errors.OAuth2Error as e:
             log.debug('Client error during validation of %r. %r.', request, e)
             request.redirect_uri = request.redirect_uri or self.error_uri
+            request.response_mode = request.response_mode or self.default_response_mode
+            if self._jwt_response_mode_enabled(request):
+                # Error responses are wrapped with the same rules as success
+                # responses. A signing failure raises ServerError instead of
+                # falling back to a plaintext response.
+                return self._prepare_jwt_authorization_response(
+                    request, e.twotuples, {}, None, 302)
             redirect_uri = common.add_params_to_uri(
                 request.redirect_uri, e.twotuples,
                 fragment=request.response_mode == "fragment")
