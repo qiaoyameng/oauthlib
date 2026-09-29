@@ -359,6 +359,7 @@ class Request:
 
         self._params = {
             "access_token": None,
+            "authorization_details": None,
             "client": None,
             "client_id": None,
             "client_secret": None,

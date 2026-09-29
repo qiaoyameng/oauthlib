@@ -52,7 +52,10 @@ class Server(
         :param kwargs: Extra parameters to pass to authorization-,
                        token-, resource-, and revocation-endpoint constructors.
         """
-        self.auth_grant = AuthorizationCodeGrant(request_validator)
+        authorization_details_registry = kwargs.pop('authorization_details_registry', None)
+        self.auth_grant = AuthorizationCodeGrant(
+            request_validator,
+            authorization_details_registry=authorization_details_registry)
         self.implicit_grant = ImplicitGrant(request_validator)
         self.password_grant = ResourceOwnerPasswordCredentialsGrant(request_validator)
         self.credentials_grant = ClientCredentialsGrant(request_validator)
@@ -119,7 +122,10 @@ class WebApplicationServer(
         :param kwargs: Extra parameters to pass to authorization-,
                        token-, resource-, and revocation-endpoint constructors.
         """
-        self.auth_grant = AuthorizationCodeGrant(request_validator)
+        authorization_details_registry = kwargs.pop('authorization_details_registry', None)
+        self.auth_grant = AuthorizationCodeGrant(
+            request_validator,
+            authorization_details_registry=authorization_details_registry)
         self.refresh_grant = RefreshTokenGrant(request_validator)
         self.bearer = BearerToken(
             request_validator, token_generator, token_expires_in, refresh_token_generator

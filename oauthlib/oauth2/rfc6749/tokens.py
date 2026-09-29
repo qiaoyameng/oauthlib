@@ -318,6 +318,11 @@ class BearerToken(TokenBase):
         if request.scopes is not None:
             token['scope'] = ' '.join(request.scopes)
 
+        # RFC 9396 Rich Authorization Requests details bound to the grant,
+        # already validated and narrowed down by the grant type.
+        if getattr(request, 'authorization_details', None) is not None:
+            token['authorization_details'] = request.authorization_details
+
         if refresh_token:
             if (request.refresh_token and
                     not self.request_validator.rotate_refresh_token(request)):

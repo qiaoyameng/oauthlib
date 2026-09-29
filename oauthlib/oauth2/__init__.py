@@ -31,6 +31,7 @@ from .rfc6749.errors import (
     AccessDeniedError,
     FatalClientError,
     InsecureTransportError,
+    InvalidAuthorizationDetailsError,
     InvalidClientError,
     InvalidClientIdError,
     InvalidGrantError,
@@ -69,3 +70,4 @@ from .rfc8628.clients import DeviceClient
 from .rfc8628.endpoints import DeviceApplicationServer, DeviceAuthorizationEndpoint
 from .rfc8628.errors import AccessDenied, AuthorizationPendingError, ExpiredTokenError, SlowDownError
 from .rfc8628.grant_types import DeviceCodeGrant
+from .rfc9396 import AuthorizationDetailsRegistry, AuthorizationDetailsValidator

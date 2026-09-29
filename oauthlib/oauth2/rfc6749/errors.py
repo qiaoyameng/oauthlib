@@ -253,6 +253,19 @@ class InvalidScopeError(OAuth2Error):
     error = 'invalid_scope'
 
 
+class InvalidAuthorizationDetailsError(OAuth2Error):
+    """
+    The requested authorization_details is invalid, unknown, malformed,
+    or exceeds the authorization details granted by the resource owner.
+
+    Used by Rich Authorization Requests as described in
+    `RFC 9396 Section 8`_.
+
+    .. _`RFC 9396 Section 8`: https://www.rfc-editor.org/rfc/rfc9396.html#section-8
+    """
+    error = 'invalid_authorization_details'
+
+
 class ServerError(OAuth2Error):
     """
     The authorization server encountered an unexpected condition that

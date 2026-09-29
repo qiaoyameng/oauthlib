@@ -50,6 +50,8 @@ class SkeletonValidator(RequestValidator):
         # Remember to associate it with request.scopes, request.redirect_uri
         # request.client and request.user (the last is passed in
         # post_authorization credentials, i.e. { 'user': request.user}.
+        # If you support RFC 9396 Rich Authorization Requests, also
+        # associate request.authorization_details.
         pass
 
     # Token request
@@ -70,6 +72,8 @@ class SkeletonValidator(RequestValidator):
     def validate_code(self, client_id, code, client, request, *args, **kwargs):
         # Validate the code belongs to the client. Add associated scopes
         # and user to request.scopes and request.user.
+        # If you saved RFC 9396 authorization_details with the code, set
+        # them back on request.authorization_details here.
         pass
 
     def confirm_redirect_uri(self, client_id, code, redirect_uri, client, request, *args, **kwargs):

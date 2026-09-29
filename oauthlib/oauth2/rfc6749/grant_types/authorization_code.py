@@ -151,6 +151,16 @@ class AuthorizationCodeGrant(GrantTypeBase):
     default_response_mode = 'query'
     response_types = ['code']
 
+    # An oauthlib.oauth2.rfc9396.AuthorizationDetailsRegistry enabling
+    # RFC 9396 Rich Authorization Requests.  When set, the
+    # "authorization_details" parameter of the authorization request is
+    # validated with the registry and the validated details are bound to
+    # the authorization code (through ``request.authorization_details``,
+    # to be persisted in ``save_authorization_code`` and restored in
+    # ``validate_code``).  The token request may then omit the parameter
+    # or ask for narrower details, but never wider ones.
+    authorization_details_registry = None
+
     # This dict below is private because as RFC mention it:
     # "S256" is Mandatory To Implement (MTI) on the server.
     #
@@ -343,7 +353,8 @@ class AuthorizationCodeGrant(GrantTypeBase):
         # invalid redirection URI.
 
         # First check duplicate parameters
-        for param in ('client_id', 'response_type', 'redirect_uri', 'scope', 'state'):
+        for param in ('client_id', 'response_type', 'redirect_uri', 'scope', 'state',
+                      'authorization_details'):
             try:
                 duplicate_params = request.duplicate_params
             except ValueError:
@@ -420,6 +431,17 @@ class AuthorizationCodeGrant(GrantTypeBase):
         # https://tools.ietf.org/html/rfc6749#section-3.3
         self.validate_scopes(request)
 
+        # OPTIONAL. Validate RFC 9396 Rich Authorization Requests details.
+        # The validated details are bound to the authorization code through
+        # request.authorization_details and saved alongside it in
+        # save_authorization_code.  Scope validation above is unaffected.
+        if self.authorization_details_registry is not None and \
+                request.authorization_details is not None:
+            request.authorization_details = \
+                self.authorization_details_registry.validate_details(
+                    request.authorization_details, request)
+            request_info['authorization_details'] = request.authorization_details
+
         request_info.update({
             'client_id': request.client_id,
             'redirect_uri': request.redirect_uri,
@@ -442,6 +464,10 @@ class AuthorizationCodeGrant(GrantTypeBase):
         if request.grant_type not in ('authorization_code', 'openid'):
             raise errors.UnsupportedGrantTypeError(request=request)
 
+        # Capture any RFC 9396 authorization_details of the token request
+        # before validate_code() binds the details stored with the code.
+        raw_token_details = request.authorization_details
+
         for validator in self.custom_validators.pre_token:
             validator(request)
 
@@ -449,7 +475,7 @@ class AuthorizationCodeGrant(GrantTypeBase):
             raise errors.InvalidRequestError(
                 description='Missing code parameter.', request=request)
 
-        for param in ('client_id', 'grant_type', 'redirect_uri'):
+        for param in ('client_id', 'grant_type', 'redirect_uri', 'authorization_details'):
             if param in request.duplicate_params:
                 raise errors.InvalidRequestError(description='Duplicate %s parameter.' % param,
                                                  request=request)
@@ -518,6 +544,25 @@ class AuthorizationCodeGrant(GrantTypeBase):
             log.debug('Redirect_uri (%r) invalid for client %r (%r).',
                       request.redirect_uri, request.client_id, request.client)
             raise errors.MismatchingRedirectURIError(request=request)
+
+        # OPTIONAL. RFC 9396 Rich Authorization Requests.  The token
+        # request may omit authorization_details, in which case the
+        # details bound to the authorization code are carried into the
+        # token, or ask for narrower details.  Asking for anything not
+        # covered by the details bound to the code is rejected, so the
+        # client can never replace or widen the granted details.
+        if self.authorization_details_registry is not None and \
+                raw_token_details is not None:
+            granted_details = request.authorization_details
+            requested_details = self.authorization_details_registry.validate_details(
+                raw_token_details, request)
+            if not self.authorization_details_registry.is_within_granted(
+                    requested_details, granted_details, request):
+                raise errors.InvalidAuthorizationDetailsError(
+                    description='Requested authorization_details exceed the ones '
+                                'granted to the authorization code.',
+                    request=request)
+            request.authorization_details = requested_details
 
         for validator in self.custom_validators.post_token:
             validator(request)

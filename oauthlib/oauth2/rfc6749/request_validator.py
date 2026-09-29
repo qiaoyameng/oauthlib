@@ -293,6 +293,10 @@ class RequestValidator:
         To support OIDC, you MUST associate the code with:
             - nonce, if present (``code["nonce"]``)
 
+        To support RFC 9396 Rich Authorization Requests, you MUST associate
+        the code with the validated ``request.authorization_details``, if
+        present, and set it back on the request in ``.validate_code``.
+
         The ``code`` argument is actually a dictionary, containing at least a
         ``code`` key with the actual authorization code:
 
@@ -467,6 +471,12 @@ class RequestValidator:
 
             - request.code_challenge
             - request.code_challenge_method
+
+        If RFC 9396 Rich Authorization Requests are used (see
+        'save_authorization_code') you MUST set the following based on the
+        information stored:
+
+            - request.authorization_details
 
         :param client_id: Unicode client identifier.
         :param code: Unicode authorization code.

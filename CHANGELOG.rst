@@ -4,6 +4,11 @@ Changelog
 3.4.0 (unreleased):
 ------------------
 OAuth2.0 Provider:
+* RFC9396: Added OAuth 2.0 Rich Authorization Requests support. Servers can
+  register per-type ``AuthorizationDetailsValidator`` policies in an
+  ``AuthorizationDetailsRegistry`` to validate ``authorization_details`` on
+  the authorization request, bind them to the authorization code and enforce
+  that the token request only asks for the same or narrower details.
 * **Breaking**: Removed JSONP support from token revocation endpoint. JSONP has been superseded by CORS for cross-origin requests. The ``enable_jsonp`` parameter has been removed from ``RevocationEndpoint`` and the ``callback`` parameter has been removed from ``prepare_token_revocation_request``.
 * Improved PKCE Nonce comparison
 
